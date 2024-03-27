@@ -89,3 +89,31 @@ func Multiplexed() ProcessOption {
 		}
 	})
 }
+
+// CombinedOutput creates a ProcessOption that combines stdout and stderr
+// into a single stream without Docker's multiplexing headers.
+func CombinedOutput() ProcessOption {
+	return ProcessOptionFunc(func(opts *ProcessOptions) {
+		// returning fast to bypass those options with a nil reader,
+		// which could be the case when other options are used
+		// to configure the exec creation.
+		if opts.Reader == nil {
+			return
+		}
+
+		done := make(chan struct{})
+
+		var outBuff bytes.Buffer
+		var errBuff bytes.Buffer
+		go func() {
+			if _, err := stdcopy.StdCopy(&outBuff, &errBuff, opts.Reader); err != nil {
+				return
+			}
+			close(done)
+		}()
+
+		<-done
+
+		opts.Reader = io.MultiReader(&outBuff, &errBuff)
+	})
+}
